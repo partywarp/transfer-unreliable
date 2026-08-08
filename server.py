@@ -180,84 +180,141 @@ reverse_router_links, reverse_next_hops = build_reverse_routes(ROUTER_COUNT)
 computer_routing_table = {
     "default": LOCAL_ROUTER,
 }
+def build_icmp_routing_tables() -> dict[str, dict[str, str]]:
+    routers = set(router_links)
+    hosts = set(host_attachment)
 
+    devices = {
+        COMPUTER_IP,
+        *routers,
+        *hosts,
+    }
+
+    tables: dict[str, dict[str, str]] = {
+        device: {}
+        for device in devices
+    }
+
+    for source in devices:
+        for destination in devices:
+            if source == destination:
+                continue
+
+            # The computer sends everything through its
+            # local/default router.
+            if source == COMPUTER_IP:
+                tables[source][destination] = LOCAL_ROUTER
+                continue
+
+            # Remote hosts send packets through the router
+            # to which they are attached.
+            if source in hosts:
+                tables[source][destination] = host_attachment[source]
+                continue
+
+            # From here, source is a router.
+
+            # Routes toward the computer use the independently
+            # generated reverse topology.
+            if destination == COMPUTER_IP:
+                if source == LOCAL_ROUTER:
+                    tables[source][destination] = COMPUTER_IP
+                else:
+                    next_hop = reverse_next_hops.get(source)
+
+                    if next_hop is None:
+                        raise RuntimeError(
+                            f"No route from {source} "
+                            f"to {COMPUTER_IP}"
+                        )
+
+                    tables[source][destination] = next_hop
+
+                continue
+
+            # Host routes were already computed by build_network().
+            if destination in hosts:
+                next_hop = routing_tables[source].get(
+                    destination
+                )
+
+                if next_hop is None:
+                    raise RuntimeError(
+                        f"No route from {source} "
+                        f"to {destination}"
+                    )
+
+                tables[source][destination] = next_hop
+                continue
+
+            # Router-to-router routes are computed once here,
+            # rather than performing BFS during every TRACE.
+            next_hop = first_router_hop(
+                source,
+                destination,
+                router_links,
+            )
+
+            if next_hop is None:
+                raise RuntimeError(
+                    f"No route from {source} "
+                    f"to {destination}"
+                )
+
+            tables[source][destination] = next_hop
+
+    return tables
+
+
+icmp_routing_tables = build_icmp_routing_tables()
 
 def trace_packet(
+    source_ip: str,
     destination_ip: str,
     ttl: int,
 ) -> str:
     if ttl < 1:
         return "TTL must be at least 1."
 
-    if destination_ip not in host_attachment:
+    if source_ip not in icmp_routing_tables:
+        return f"UNKNOWN SOURCE {source_ip}"
+
+    if destination_ip not in icmp_routing_tables:
         return f"DESTINATION UNREACHABLE {destination_ip}"
 
-    # The virtual computer sends everything to its default gateway.
-    current_router = computer_routing_table["default"]
+    current = source_ip
     remaining_ttl = ttl
     visited: set[str] = set()
 
     while True:
-        if current_router in visited:
-            return f"ROUTING LOOP AT {current_router}"
-
-        visited.add(current_router)
-
-        # Every router decreases the TTL before forwarding.
-        remaining_ttl -= 1
-
-        if remaining_ttl == 0:
-            return f"TTL EXPIRED AT {current_router}"
-
-        next_hop = routing_tables[current_router].get(destination_ip)
-
-        if next_hop is None:
-            return f"NO ROUTE FROM {current_router}"
-
-        if next_hop == destination_ip:
+        if current == destination_ip:
             return f"REACHED {destination_ip}"
 
-        current_router = next_hop
+        if current in visited:
+            return f"ROUTING LOOP AT {current}"
 
+        visited.add(current)
 
-def trace_from_host_to_computer(
-    source_ip: str,
-    ttl: int,
-) -> str:
-    if ttl < 1:
-        return "TTL must be at least 1."
-
-    attached_router = host_attachment.get(source_ip)
-
-    if attached_router is None:
-        return f"UNKNOWN HOST {source_ip}"
-
-    current_router = attached_router
-    remaining_ttl = ttl
-    visited: set[str] = set()
-
-    while True:
-        if current_router in visited:
-            return f"ROUTING LOOP AT {current_router}"
-
-        visited.add(current_router)
-
-        # The current router processes and decreases the TTL.
-        remaining_ttl -= 1
-
-        if remaining_ttl == 0:
-            return f"TTL EXPIRED AT {current_router}"
-
-        # The local router forwards directly to the computer.
-        if current_router == LOCAL_ROUTER:
-            return f"REACHED {COMPUTER_IP}"
-
-        next_hop = reverse_next_hops.get(current_router)
+        next_hop = icmp_routing_tables[
+            current
+        ].get(destination_ip)
 
         if next_hop is None:
-            return f"NO ROUTE FROM {current_router}"
+            return f"NO ROUTE FROM {current}"
 
-        current_router = next_hop
+        current = next_hop
+
+        # The destination receives the packet rather
+        # than forwarding it, so it does not expire there.
+        if current == destination_ip:
+            return f"REACHED {destination_ip}"
+
+        # Routers decrement TTL when forwarding.
+        if current in router_links:
+            remaining_ttl -= 1
+
+            if remaining_ttl == 0:
+                return f"TTL EXPIRED AT {current}"
 
 
 @dataclass
@@ -326,6 +383,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
             command = message.split(maxsplit=1)[0].upper()
             _, *args = message.split()
 
+            # udp socket.connect()
             if command == "CONNECT":
                 parts = message.split()
 
@@ -346,6 +404,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 connection = key
                 await ws.send_text(f"CONNECTED: {online_hosts[key]}")
 
+            # udp socket.close()
             elif command == "CLOSE":
                 if connection is None:
                     await ws.send_text("You have no connection.")
@@ -436,6 +495,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
 
                 await ws.send_text(f"READY {filename} {total_chunks}")
 
+            # socket.send()
             elif command == "DATA":
                 if connection != NY_TIMES_ADDRESS:
                     await ws.send_text("You must connect to NY Times first.")
@@ -593,6 +653,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
 
                 transfer = None
 
+            # client command
             elif command == "HELP":
                 await send_help(ws)
             elif command == "TRACE":
@@ -608,7 +669,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     await ws.send_text("TTL must be an integer.")
                     continue
 
-                await ws.send_text(trace_packet(destination_ip, ttl))
+                await ws.send_text(trace_packet(COMPUTER_IP, destination_ip, ttl))
             elif command == "REMOTE_TRACE":
                 if connection is None:
                     await ws.send_text("You must connect to a host first.")
@@ -627,8 +688,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 source_ip = connection.rsplit(":", maxsplit=1)[0]
 
                 await ws.send_text(
-                    trace_from_host_to_computer(
+                    trace_packet(
                         source_ip,
+                        COMPUTER_IP,
                         ttl,
                     )
                 )
