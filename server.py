@@ -851,16 +851,6 @@ async def ws_endpoint(ws: WebSocket) -> None:
 
                 expected_sha256 = args[2].lower()
 
-                valid_sha256 = len(expected_sha256) == 64 and all(
-                    character in "0123456789abcdef" for character in expected_sha256
-                )
-
-                if not valid_sha256:
-                    await ws.send_text(
-                        "The SHA-256 value must contain " "64 hexadecimal characters."
-                    )
-                    continue
-
                 sock.transfer = Transfer(
                     filename=filename,
                     total_chunks=total_chunks,
