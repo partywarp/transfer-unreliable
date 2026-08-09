@@ -655,7 +655,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
                             f"-> {remote}"
                         )
 
-                    await ws.send_text("\n".join(lines))
+                    for line in lines:
+                        await ws.send_text(line)
 
                 elif action == "USE":
                     if len(args) != 2:
@@ -723,8 +724,8 @@ async def ws_endpoint(ws: WebSocket) -> None:
                     )
                     for entry in entries
                 ]
-
-                await ws.send_text("\n".join(lines))
+                for line in lines:
+                    await ws.send_text(line)
 
             # Similar to UDP socket.connect().
             elif command == "CONNECT":
