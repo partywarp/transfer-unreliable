@@ -13,7 +13,7 @@ FRAME_LOSS_RATE = 0.20
 # These settings simulate transmission time and per-message overhead.
 BASE_DELAY_SECONDS = 0.02
 LINK_BYTES_PER_SECOND = 1_000.0
-JITTER_SECONDS = 0.01
+JITTER_SECONDS = 0.1
 
 DATA_HEADER_BYTES = 20
 ACK_BYTES = 8
