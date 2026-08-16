@@ -14,7 +14,7 @@ clock_offset = time.time() - time.monotonic() + random.uniform(-60, 60)
 
 
 def server_time() -> float:
-    return clock_offset + .999 * time.monotonic()
+    return clock_offset + 1.001 * time.monotonic()
 
 
 async def time_server_command(
