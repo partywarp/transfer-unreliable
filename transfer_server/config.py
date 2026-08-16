@@ -37,16 +37,21 @@ ROUTER_COUNT: Final[int] = 6
 random_source = random.Random(os.environ.get("NETWORK_SEED"))
 
 
-async def datagram_dropped(payload: bytes) -> bool:
-    frame_count = max(
-        1,
-        (len(payload) + VIRTUAL_FRAME_BYTES - 1) // VIRTUAL_FRAME_BYTES,
-    )
-
+async def datagram_delay(payload: bytes) -> None:
     await asyncio.sleep(
         BASE_DELAY_SECONDS
         + len(payload) / LINK_BYTES_PER_SECOND
         + random.uniform(0.0, JITTER_SECONDS)
     )
 
-    return any(random.random() < FRAME_LOSS_RATE for _ in range(frame_count))
+
+async def datagram_dropped(payload: bytes) -> bool:
+    await datagram_delay(payload)
+    frame_count = max(
+        1,
+        (len(payload) + VIRTUAL_FRAME_BYTES - 1) // VIRTUAL_FRAME_BYTES,
+    )
+
+
+    drop_probability = 1 - (1 - FRAME_LOSS_RATE) ** frame_count
+    return random.random() < drop_probability

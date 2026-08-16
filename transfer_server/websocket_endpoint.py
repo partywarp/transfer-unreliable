@@ -27,6 +27,7 @@ async def send_help(ws: WebSocket) -> None:
         "TRACE <ip> <ttl>",
         "REMOTE_TRACE <ttl>",
         "TIME",
+        "VERIFY <seconds>",
         "HELP",
     ):
         await ws.send_text(line)
