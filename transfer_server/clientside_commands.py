@@ -22,64 +22,64 @@ async def clientside_command(
     ws: WebSocket,
     session: SessionState,
 ) -> bool:
-    if command == "SOCKET":
-        if not args:
-            await ws.send_text("Usage: SOCKET NEW | LIST | USE <id> | CLOSE <id>")
-            return True
+    # if command == "SOCKET":
+    #     if not args:
+    #         await ws.send_text("Usage: SOCKET NEW | LIST | USE <id> | CLOSE <id>")
+    #         return True
 
-        action = args[0].upper()
+    #     action = args[0].upper()
 
-        if action == "NEW":
-            socket_id, sock = new_socket(session)
-            await ws.send_text(
-                f"SOCKET {socket_id} "
-                f"BOUND {session.ip}:{sock.local_port}"
-            )
+    #     if action == "NEW":
+    #         socket_id, sock = new_socket(session)
+    #         await ws.send_text(
+    #             f"SOCKET {socket_id} "
+    #             f"BOUND {session.ip}:{sock.local_port}"
+    #         )
 
-        elif action == "LIST":
-            if not session.sockets:
-                await ws.send_text("No sockets.")
-                return True
+    #     elif action == "LIST":
+    #         if not session.sockets:
+    #             await ws.send_text("No sockets.")
+    #             return True
 
-            for socket_id, sock in session.sockets.items():
-                marker = "*" if socket_id == session.active_socket_id else "-"
-                remote = remote_key(sock) or "unconnected"
-                await ws.send_text(
-                    f"{marker} SOCKET {socket_id} "
-                    f"{session.ip}:{sock.local_port} "
-                    f"-> {remote}"
-                )
+    #         for socket_id, sock in session.sockets.items():
+    #             marker = "*" if socket_id == session.active_socket_id else "-"
+    #             remote = remote_key(sock) or "unconnected"
+    #             await ws.send_text(
+    #                 f"{marker} SOCKET {socket_id} "
+    #                 f"{session.ip}:{sock.local_port} "
+    #                 f"-> {remote}"
+    #             )
 
-        elif action == "USE":
-            if len(args) != 2:
-                await ws.send_text("Usage: SOCKET USE <id>")
-                return True
+    #     elif action == "USE":
+    #         if len(args) != 2:
+    #             await ws.send_text("Usage: SOCKET USE <id>")
+    #             return True
 
-            socket_id = int(args[1])
+    #         socket_id = int(args[1])
 
-            if not select_socket(session, socket_id):
-                await ws.send_text("No such socket.")
-                return True
+    #         if not select_socket(session, socket_id):
+    #             await ws.send_text("No such socket.")
+    #             return True
 
-            await ws.send_text(f"USING SOCKET {socket_id}")
+    #         await ws.send_text(f"USING SOCKET {socket_id}")
 
-        elif action == "CLOSE":
-            if len(args) != 2:
-                await ws.send_text("Usage: SOCKET CLOSE <id>")
-                return True
+    #     elif action == "CLOSE":
+    #         if len(args) != 2:
+    #             await ws.send_text("Usage: SOCKET CLOSE <id>")
+    #             return True
 
-            socket_id = int(args[1])
+    #         socket_id = int(args[1])
 
-            if close_socket(session, socket_id) is None:
-                await ws.send_text("No such socket.")
-                return True
+    #         if close_socket(session, socket_id) is None:
+    #             await ws.send_text("No such socket.")
+    #             return True
 
-            await ws.send_text(f"SOCKET {socket_id} CLOSED")
+    #         await ws.send_text(f"SOCKET {socket_id} CLOSED")
 
-        else:
-            await ws.send_text("Usage: SOCKET NEW | LIST | USE <id> | CLOSE <id>")
+    #     else:
+    #         await ws.send_text("Usage: SOCKET NEW | LIST | USE <id> | CLOSE <id>")
 
-        return True
+    #     return True
 
     if command == "CONNECT":
         if len(args) != 2:
@@ -123,30 +123,30 @@ async def clientside_command(
         await ws.send_text("Connection closed.")
         return True
 
-    if command == "TRACE":
-        if len(args) != 2:
-            await ws.send_text("Usage: TRACE <destination-ip> <ttl>")
-            return True
+    # if command == "TRACE":
+    #     if len(args) != 2:
+    #         await ws.send_text("Usage: TRACE <destination-ip> <ttl>")
+    #         return True
 
-        await ws.send_text(trace_packet(COMPUTER_IP, args[0], int(args[1])))
-        return True
+    #     await ws.send_text(trace_packet(COMPUTER_IP, args[0], int(args[1])))
+    #     return True
 
-    if command == "REMOTE_TRACE":
-        if len(args) != 1:
-            await ws.send_text("Usage: REMOTE_TRACE <ttl>")
-            return True
+    # if command == "REMOTE_TRACE":
+    #     if len(args) != 1:
+    #         await ws.send_text("Usage: REMOTE_TRACE <ttl>")
+    #         return True
 
-        sock = active_socket(session)
+    #     sock = active_socket(session)
 
-        if sock is None:
-            await ws.send_text("No active socket.")
-            return True
+    #     if sock is None:
+    #         await ws.send_text("No active socket.")
+    #         return True
 
-        if sock.remote is None:
-            await ws.send_text("You must connect to a host first.")
-            return True
+    #     if sock.remote is None:
+    #         await ws.send_text("You must connect to a host first.")
+    #         return True
 
-        await ws.send_text(trace_packet(sock.remote[0], COMPUTER_IP, int(args[0])))
-        return True
+    #     await ws.send_text(trace_packet(sock.remote[0], COMPUTER_IP, int(args[0])))
+    #     return True
 
     return False
