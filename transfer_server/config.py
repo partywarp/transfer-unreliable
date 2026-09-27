@@ -22,10 +22,10 @@ SOCKET_PORT_MIN: Final[int] = 64000
 SOCKET_PORT_MAX: Final[int] = 65535
 
 online_hosts: dict[str, str] = {
-    "10.0.0.6:443": "The Bank",
-    "10.0.0.7:80": "NY Times",
-    "10.0.0.8:443": "Secure Government Site",
-    "10.0.0.9:123": "SNTP Time Server",
+    "10.0.0.6:4": "The Bank", # 443
+    "10.0.0.7:8": "NY Times", # 80
+    "10.0.0.8:4": "Secure Government Site", # 443
+    "10.0.0.9:1": "SNTP Time Server", # 123
 }
 
 COMPUTER_IP: Final[str] = "10.0.2.100"
