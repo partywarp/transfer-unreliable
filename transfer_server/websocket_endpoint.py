@@ -20,10 +20,10 @@ async def send_help(ws: WebSocket) -> None:
         "CONNECT <ip> <port>",
         "CLOSE",
         "ROB <amount>",
-        # "START <filename> <total_chunks> <sha256>",
-        # "DATA <sequence_number> <text>",
-        # "STATUS",
-        # "DONE",
+        "START <filename> <total_chunks> <sha256>",
+        "DATA <sequence_number> <text>",
+        "STATUS",
+        "DONE",
         # "TRACE <ip> <ttl>",
         # "REMOTE_TRACE <ttl>",
         # "TIME",
@@ -61,14 +61,14 @@ async def ws_endpoint(ws: WebSocket) -> None:
             ):
                 continue
 
-            # if await news_site_command(
-            #     command,
-            #     args,
-            #     message,
-            #     ws,
-            #     session,
-            # ):
-            #     continue
+            if await news_site_command(
+                command,
+                args,
+                message,
+                ws,
+                session,
+            ):
+                continue
 
             if await bank_command(
                 command,
