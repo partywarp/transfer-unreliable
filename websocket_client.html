@@ -8,7 +8,15 @@
 	<body>
 		<script type="module">
 			const websocket = new WebSocket("/ws");
+			const messageQueue = [];
 			const historyEl = document.getElementById("message-history");
+			const opened = new Promise((r) => websocket.addEventListener("open", () => {
+				const el = document.createElement("div");
+				el.textContent = "online";
+				el.className = "green";
+				historyEl.after(el);
+				r();
+			}, { once: true }));
 			/**
 			 * @param {string} text
 			 * @param {"user" | "server"} side
@@ -28,7 +36,13 @@
 					event.preventDefault();
 					const data = new FormData(event.currentTarget);
 					addMessage(data.get("message"), "user");
-					websocket.send(data.get("message"));
+					messageQueue.push(data.get("message"));
+					(async function () {
+						await opened;
+						while (messageQueue.length) {
+							websocket.send(messageQueue.shift());
+						}
+					})();
 					event.currentTarget.elements["message"].value = "";
 				});
 		</script>
@@ -37,6 +51,9 @@
 			<input class="message-box" name="message" required type="text" />
 		</form>
 		<style>
+			.green {
+				background-color: lightgreen;
+			}
 			* {
 				box-sizing: border-box;
 				margin: 0;
@@ -46,13 +63,11 @@
 				height: 100dvh;
 				display: flex;
 				flex-direction: column;
-				overflow: hidden;
 			}
 
 			#message-history {
 				flex: 1;
-				min-height: 0;
-				overflow-y: auto;
+				overflow: auto;
 				font-size: 2rem;
 			}
 
@@ -66,7 +81,7 @@
         font-size: 2rem;
 			}
 			.user {
-				background-color: #ddd;
+				background-color: #eee;
 			}
 			.server {
 				background-color: #bbb;
