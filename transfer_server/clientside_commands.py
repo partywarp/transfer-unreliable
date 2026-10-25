@@ -123,30 +123,30 @@ async def clientside_command(
         await ws.send_text("Connection closed.")
         return True
 
-    # if command == "TRACE":
-    #     if len(args) != 2:
-    #         await ws.send_text("Usage: TRACE <destination-ip> <ttl>")
-    #         return True
+    if command == "TRACE":
+        if len(args) != 2:
+            await ws.send_text("Usage: TRACE <destination-ip> <ttl>")
+            return True
 
-    #     await ws.send_text(trace_packet(COMPUTER_IP, args[0], int(args[1])))
-    #     return True
+        await ws.send_text(trace_packet(COMPUTER_IP, args[0], int(args[1])))
+        return True
 
-    # if command == "REMOTE_TRACE":
-    #     if len(args) != 1:
-    #         await ws.send_text("Usage: REMOTE_TRACE <ttl>")
-    #         return True
+    if command == "REMOTE_TRACE":
+        if len(args) != 1:
+            await ws.send_text("Usage: REMOTE_TRACE <ttl>")
+            return True
 
-    #     sock = active_socket(session)
+        sock = active_socket(session)
 
-    #     if sock is None:
-    #         await ws.send_text("No active socket.")
-    #         return True
+        if sock is None:
+            await ws.send_text("No active socket.")
+            return True
 
-    #     if sock.remote is None:
-    #         await ws.send_text("You must connect to a host first.")
-    #         return True
+        if sock.remote is None:
+            await ws.send_text("You must connect to a host first.")
+            return True
 
-    #     await ws.send_text(trace_packet(sock.remote[0], COMPUTER_IP, int(args[0])))
-    #     return True
+        await ws.send_text(trace_packet(sock.remote[0], COMPUTER_IP, int(args[0])))
+        return True
 
     return False
