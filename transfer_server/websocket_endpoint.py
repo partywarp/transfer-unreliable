@@ -26,8 +26,8 @@ async def send_help(ws: WebSocket) -> None:
         "DONE",
         "TRACE <ip> <ttl>",
         "REMOTE_TRACE <ttl>",
-        # "TIME",
-        # "VERIFY <seconds>",
+        "TIME",
+        "VERIFY <seconds>",
         "HELP",
     ):
         await ws.send_text(line)
@@ -78,13 +78,13 @@ async def ws_endpoint(ws: WebSocket) -> None:
             ):
                 continue
 
-            # if await time_server_command(
-            #     command,
-            #     args,
-            #     ws,
-            #     session,
-            # ):
-            #     continue
+            if await time_server_command(
+                command,
+                args,
+                ws,
+                session,
+            ):
+                continue
 
             await send_help(ws)
 
