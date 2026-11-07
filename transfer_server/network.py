@@ -91,6 +91,28 @@ endpoint_gateways = {
 }
 first_hops = build_first_hops(router_ips, endpoint_gateways)
 
+# A host gateway always carries traffic, so its failure cannot be incidental.
+# This state belongs to the shared network, not to any student's session.
+failed_router: str | None = random_source.choice(
+    tuple(
+        router
+        for router in router_ips
+        if router != LOCAL_ROUTER and router in endpoint_gateways.values()
+    )
+)
+
+
+def restart_router(router_ip: str) -> str:
+    global failed_router
+
+    if router_ip not in router_set:
+        return "Unknown router."
+
+    if router_ip == failed_router:
+        failed_router = None
+
+    return f"RESTARTED {router_ip}"
+
 
 def trace_packet(source_ip: str, destination_ip: str, ttl: int) -> str:
     if ttl < 1:
@@ -102,11 +124,17 @@ def trace_packet(source_ip: str, destination_ip: str, ttl: int) -> str:
     if destination_ip not in device_ips:
         return f"DESTINATION UNREACHABLE {destination_ip}"
 
+    if source_ip == failed_router:
+        return "TIMEOUT"
+
     current = source_ip
     remaining_ttl = ttl
 
     while current != destination_ip:
         current = first_hops[(current, destination_ip)]
+
+        if current == failed_router:
+            return "TIMEOUT"
 
         if current == destination_ip:
             break
@@ -118,3 +146,12 @@ def trace_packet(source_ip: str, destination_ip: str, ttl: int) -> str:
                 return f"TTL EXPIRED AT {current}"
 
     return f"REACHED {destination_ip}"
+
+
+def can_exchange_packets(source_ip: str, destination_ip: str) -> bool:
+    # Requests and replies can follow different routes.
+    ttl = len(router_ips) + 1
+    return (
+        trace_packet(source_ip, destination_ip, ttl) == f"REACHED {destination_ip}"
+        and trace_packet(destination_ip, source_ip, ttl) == f"REACHED {source_ip}"
+    )

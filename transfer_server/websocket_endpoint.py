@@ -6,7 +6,8 @@ from .bank_commands import bank_command
 from .clientside_commands import clientside_command
 from .config import COMPUTER_IP
 from .news_site_commands import news_site_command
-from .state import SessionState, new_socket
+from .network import can_exchange_packets
+from .state import SessionState, active_socket, new_socket
 from .time_server_commands import time_server_command
 
 
@@ -26,6 +27,7 @@ async def send_help(ws: WebSocket) -> None:
         "DONE",
         "TRACE <ip> <ttl>",
         "REMOTE_TRACE <ttl>",
+        "RESTART <router-ip>",
         "TIME",
         "VERIFY <seconds>",
         "HELP",
@@ -60,6 +62,16 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 session,
             ):
                 continue
+
+            if command in {"ROB", "START", "DATA", "STATUS", "DONE", "TIME", "VERIFY"}:
+                sock = active_socket(session)
+                if (
+                    sock is not None
+                    and sock.remote is not None
+                    and not can_exchange_packets(session.ip, sock.remote[0])
+                ):
+                    await ws.send_text("TIMEOUT")
+                    continue
 
             if await news_site_command(
                 command,

@@ -3,7 +3,7 @@
 from fastapi import WebSocket
 
 from .config import COMPUTER_IP, online_hosts
-from .network import trace_packet
+from .network import restart_router, trace_packet
 from .state import (
     SessionState,
     active_socket,
@@ -22,6 +22,15 @@ async def clientside_command(
     ws: WebSocket,
     session: SessionState,
 ) -> bool:
+    if command == "RESTART":
+        if len(args) != 1:
+            await ws.send_text("Usage: RESTART <router-ip>")
+            return True
+
+        # Emergency out-of-band access does not depend on packet delivery.
+        await ws.send_text(restart_router(args[0]))
+        return True
+
     # if command == "SOCKET":
     #     if not args:
     #         await ws.send_text("Usage: SOCKET NEW | LIST | USE <id> | CLOSE <id>")
