@@ -9,14 +9,20 @@
 		<script type="module">
 			const websocket = new WebSocket("/ws");
 			const messageQueue = [];
+			const msgForm = document.getElementById("message-box");
 			const historyEl = document.getElementById("message-history");
-			const opened = new Promise((r) => websocket.addEventListener("open", () => {
-				const el = document.createElement("div");
-				el.textContent = "online";
-				el.className = "green";
-				historyEl.after(el);
-				r();
-			}, { once: true }));
+			const opened = new Promise((r) =>
+				websocket.addEventListener(
+					"open",
+					() => {
+						const el = document.createElement("div");
+						el.className = "bg-green-500 size-2 rounded-full right-3 absolute top-1/2 -translate-y-1/2";
+						msgForm.append(el);
+						r();
+					},
+					{ once: true },
+				),
+			);
 			/**
 			 * @param {string} text
 			 * @param {"user" | "server"} side
@@ -24,68 +30,42 @@
 			function addMessage(text, side) {
 				const el = document.createElement("div");
 				el.textContent = text;
-				el.className = side;
+				el.className = side == "server" ? "bg-slate-200" : "";
 				historyEl.append(el);
 			}
 			websocket.addEventListener("message", (event) => {
 				addMessage(event.data, "server");
 			});
-			document
-				.getElementById("message-box")
-				.addEventListener("submit", (event) => {
-					event.preventDefault();
-					const data = new FormData(event.currentTarget);
-					addMessage(data.get("message"), "user");
-					messageQueue.push(data.get("message"));
-					(async function () {
-						await opened;
-						while (messageQueue.length) {
-							websocket.send(messageQueue.shift());
-						}
-					})();
-					event.currentTarget.elements["message"].value = "";
-				});
+			msgForm.addEventListener("submit", (event) => {
+				event.preventDefault();
+				const data = new FormData(event.currentTarget);
+				addMessage(data.get("message"), "user");
+				messageQueue.push(data.get("message"));
+				(async function () {
+					await opened;
+					while (messageQueue.length) {
+						websocket.send(messageQueue.shift());
+					}
+				})();
+				event.currentTarget.elements["message"].value = "";
+			});
 		</script>
-		<div id="message-history"></div>
-		<form id="message-box">
-			<input class="message-box" name="message" required type="text" />
-		</form>
+		<div class="border-slate-500 bg-slate-400 border-64 h-screen overflow-auto">
+			<div id="message-history"></div>
+			<form id="message-box" class="relative">
+				<input
+					class="w-full p-2 border-slate-600 border-4 outline-none focus:bg-slate-300"
+					name="message"
+					required
+					type="text"
+					autocomplete="off"
+					autocorrect="off"
+					spellcheck="false"
+				/>
+			</form>
+		</div>
 		<style>
-			.green {
-				background-color: lightgreen;
-			}
-			* {
-				box-sizing: border-box;
-				margin: 0;
-				padding: 0;
-			}
-			body {
-				height: 100dvh;
-				display: flex;
-				flex-direction: column;
-			}
-
-			#message-history {
-				flex: 1;
-				overflow: auto;
-				font-size: 2rem;
-			}
-
-			#message-box {
-				flex-shrink: 0;
-			}
-      
-			.message-box {
-        width: 100%;
-				border: 4px ridge black;
-        font-size: 2rem;
-			}
-			.user {
-				background-color: #eee;
-			}
-			.server {
-				background-color: #bbb;
-			}
+			@import "tailwindcss";
 		</style>
 	</body>
 </html>
