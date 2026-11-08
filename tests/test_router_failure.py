@@ -137,14 +137,14 @@ class RouterFailureTests(unittest.IsolatedAsyncioTestCase):
                 with patch.object(network, "failed_router", network.endpoint_gateways[host]):
                     async with self.connection() as (send, receive):
                         await send(f"CONNECT {host} {port}")
-                        await receive()
+                        self.assertTrue((await receive()).startswith("CONNECTED:"))
                         await send(command)
                         self.assertEqual(await receive(), "TIMEOUT")
 
         with patch.object(network, "failed_router", network.endpoint_gateways["10.0.0.7"]):
             async with self.connection() as (send, receive):
                 await send("CONNECT 10.0.0.7 80")
-                await receive()
+                self.assertEqual(await receive(), "CONNECTED: NY Times")
                 checksum = hashlib.sha256(b"hello").hexdigest()
                 await send(f"START file 1 {checksum}")
                 self.assertEqual(await receive(), "TIMEOUT")
@@ -160,7 +160,34 @@ class RouterFailureTests(unittest.IsolatedAsyncioTestCase):
                 await send("DONE")
                 self.assertTrue((await receive()).startswith("TRANSFER COMPLETE file 5 bytes"))
 
-    def test_reply_route_failure_also_blocks_traffic(self):
+    async def test_offline_hosts_and_wrong_ports_still_reject_connections(self):
+        with patch.object(network, "failed_router", None):
+            async with self.connection() as (send, receive):
+                for host, port in (("10.0.0.100", 443), ("10.0.0.7", 81)):
+                    await send(f"CONNECT {host} {port}")
+                    self.assertEqual(await receive(), "Host offline (or incorrect port).")
+                await send("CONNECT 10.0.0.7 80")
+                self.assertEqual(await receive(), "CONNECTED: NY Times")
+
+    async def test_outage_hosts_connect_but_commands_timeout_until_shared_restart(self):
+        address = next(
+            address for address in network.online_hosts
+            if address.startswith(self.host + ":")
+        )
+        command = "CONNECT " + address.replace(":", " ")
+        async with self.connection() as (send1, receive1), self.connection() as (send2, receive2):
+            for send, receive in ((send1, receive1), (send2, receive2)):
+                await send(command)
+                self.assertEqual(await receive(), f"CONNECTED: {network.online_hosts[address]}")
+                await send("STATUS")
+                self.assertEqual(await receive(), "TIMEOUT")
+            await send1(f"RESTART {self.failed}")
+            self.assertEqual(await receive1(), f"RESTARTED {self.failed}")
+            for send, receive in ((send1, receive1), (send2, receive2)):
+                await send("REMOTE_TRACE 10")
+                self.assertEqual(await receive(), f"REACHED {COMPUTER_IP}")
+
+    async def test_reply_route_failure_also_blocks_traffic(self):
         host = "10.0.0.9"
         healthy_gateway = next(
             router for router in network.router_ips
@@ -174,6 +201,11 @@ class RouterFailureTests(unittest.IsolatedAsyncioTestCase):
         }):
             self.assertEqual(network.trace_packet(COMPUTER_IP, host, 10), f"REACHED {host}")
             self.assertFalse(network.can_exchange_packets(COMPUTER_IP, host))
+            async with self.connection() as (send, receive):
+                await send(f"CONNECT {host} 123")
+                self.assertEqual(await receive(), "CONNECTED: SNTP Time Server")
+                await send("TIME")
+                self.assertEqual(await receive(), "TIMEOUT")
 
     async def test_help_lists_recovery_without_disclosing_failure(self):
         async with self.connection() as (send, receive):
@@ -181,7 +213,7 @@ class RouterFailureTests(unittest.IsolatedAsyncioTestCase):
             lines = []
             while not lines or lines[-1] != "HELP":
                 lines.append(await receive())
-            self.assertIn("RESTART <router-ip> (emergency out-of-band)", lines)
+            self.assertIn("RESTART <router-ip>", lines)
             self.assertNotIn(self.failed, " ".join(lines))
             self.assertFalse(any("PING" in line for line in lines))
 
