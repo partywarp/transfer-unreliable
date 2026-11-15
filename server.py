@@ -7,9 +7,12 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from transfer_server.api import sixseven
+from transfer_server.government_commands import public_key_info
+from transfer_server.instructor import router as instructor_router
 from transfer_server.websocket_endpoint import ws_endpoint
 
 app = FastAPI()
+app.include_router(instructor_router)
 
 app.mount("/assets", StaticFiles(directory="dist/assets"), name="static")
 
@@ -20,6 +23,7 @@ async def health():
 
 app.get("/6767420", response_class=HTMLResponse)(sixseven)
 app.websocket("/ws")(ws_endpoint)
+app.get("/government/public-key")(public_key_info)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Instructor · Government receipts</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; background: #101722; color: #e5edf8; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 880px; margin: 48px auto; padding: 0 24px 48px; }
+    h1 { font-size: clamp(1.8rem, 5vw, 2.5rem); margin: 8px 0; }
+    h2 { font-size: 1.1rem; margin-top: 0; }
+    p { line-height: 1.6; }
+    .eyebrow { color: #87c8ff; font-size: .8rem; letter-spacing: .12em; text-transform: uppercase; }
+    .muted { color: #aab9cd; }
+    section { margin-top: 28px; padding: 24px; border: 1px solid #33435b; border-radius: 12px; background: #172131; }
+    .modes { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0; }
+    button { font: inherit; cursor: pointer; color: inherit; background: #25344c; border: 1px solid #526781; border-radius: 6px; padding: 10px 16px; }
+    button[aria-pressed="true"] { background: #a4d6ff; color: #102438; border-color: #a4d6ff; font-weight: 700; }
+    button:disabled { opacity: .5; cursor: wait; }
+    button:focus-visible { outline: 3px solid #a4d6ff; outline-offset: 3px; }
+    code { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }
+    #public-key { display: block; background: #101722; padding: 16px; border-radius: 6px; }
+    #status { color: #a4d6ff; }
+    #error { color: #ffb1ae; }
+    li { margin: 10px 0; line-height: 1.5; }
+    a { color: #a4d6ff; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">Instructor controls · 10.0.0.8:443</div>
+    <h1>Intercept government receipts</h1>
+    <p class="muted">Choose what students receive after a tax payment. Changes apply to subsequent government responses across all student connections.</p>
+  </header>
+
+  <section aria-labelledby="attack-heading">
+    <h2 id="attack-heading">Attack mode</h2>
+    <p id="status" role="status">Loading controls…</p>
+    <div class="modes" aria-label="Attack modes">
+      <button type="button" data-mode="FORWARD" aria-pressed="false" disabled>FORWARD</button>
+      <button type="button" data-mode="FORGE" aria-pressed="false" disabled>FORGE</button>
+      <button type="button" data-mode="REPLAY" aria-pressed="false" disabled>REPLAY</button>
+    </div>
+    <p id="description" class="muted"></p>
+    <p class="muted">FORGE keeps the expected amount and nonce, but signs with an independent attacker key. JSON, value, and signature-format checks pass; verification with the trusted government key fails.</p>
+    <p id="error" role="alert" hidden></p>
+    <p id="history" class="muted"></p>
+    <p class="muted">REPLAY uses the preceding transaction's genuine receipt. With no previous receipt, it sends nothing. Genuine receipts are retained for replay even when FORGE replaces the delivered signature.</p>
+  </section>
+
+  <section aria-labelledby="key-heading">
+    <h2 id="key-heading">Government public key · Ed25519</h2>
+    <code id="public-key">Loading…</code>
+    <p class="muted">Base64-encoded raw public key. Share this with students through a trusted classroom channel. The private key is never exposed to these controls.</p>
+    <p class="muted">Key, attack mode, and replay history reset when the server process restarts. <a href="/government/public-key" target="_blank" rel="noopener">Public-key JSON</a></p>
+  </section>
+
+  <section aria-labelledby="student-heading">
+    <h2 id="student-heading">Student protocol</h2>
+    <ol>
+      <li><code>CONNECT 10.0.0.8 443</code></li>
+      <li><code>PAY 25.00 your-fresh-nonce</code> — use a new, unpredictable nonce for each transaction.</li>
+      <li>Parse the single-line JSON response: <code>{"message":{"amount":"25.00","nonce":"your-fresh-nonce"},"signature":"…"}</code>.</li>
+      <li>Require exactly two string fields in <code>message</code>: <code>amount</code> and <code>nonce</code>. Serialize them in that order as compact JSON without extra spaces, using UTF-8 and literal Unicode characters. In JavaScript: <code>JSON.stringify({amount: message.amount, nonce: message.nonce})</code>.</li>
+      <li>Verify the Base64 Ed25519 signature over those bytes using the trusted government public key. Then check nonce and amount against the current payment. A replay has a valid signature but belongs to an older transaction.</li>
+    </ol>
+  </section>
+</main>
+<script type="module">
+  const buttons = [...document.querySelectorAll("[data-mode]")];
+  const error = document.getElementById("error");
+  const descriptions = {
+    FORWARD: "Deliver the genuine receipt with its valid government signature.",
+    FORGE: "Keep the amount and nonce, but sign with an attacker key. Government-key verification fails.",
+    REPLAY: "Deliver an earlier genuine receipt. Signature passes; transaction checks fail."
+  };
+  let saving = false;
+
+  async function request(path, options = {}) {
+    const response = await fetch(path, { credentials: "same-origin", cache: "no-store", ...options });
+    if (!response.ok) throw new Error(`Controls unavailable (HTTP ${response.status}).`);
+    return response.json();
+  }
+
+  function render(state) {
+    document.getElementById("status").textContent = `Active: ${state.mode} · all student connections`;
+    document.getElementById("description").textContent = descriptions[state.mode];
+    document.getElementById("history").textContent = `${state.receipt_count} government receipts processed · ${state.replay_available ? "Replay available" : "No receipt available for replay yet"}`;
+    document.getElementById("public-key").textContent = state.public_key;
+    for (const button of buttons) button.setAttribute("aria-pressed", String(button.dataset.mode === state.mode));
+  }
+
+  function showError(cause) {
+    error.textContent = cause instanceof Error ? cause.message : "Could not update controls.";
+    error.hidden = false;
+  }
+
+  function setDisabled(disabled) {
+    for (const button of buttons) button.disabled = disabled;
+  }
+
+  async function save(mode) {
+    saving = true;
+    setDisabled(true);
+    error.hidden = true;
+    try {
+      render(await request("/instructor/api/mode", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode })
+      }));
+    } catch (cause) {
+      showError(cause);
+    } finally {
+      saving = false;
+      setDisabled(false);
+    }
+  }
+
+  for (const button of buttons) button.addEventListener("click", () => save(button.dataset.mode));
+  try {
+    const state = await request("/instructor/api/state");
+    render(state);
+    setDisabled(false);
+    setInterval(async () => {
+      if (saving) return;
+      try { render(await request("/instructor/api/state")); }
+      catch (cause) { showError(cause); }
+    }, 3000);
+  } catch (cause) {
+    showError(cause);
+    document.getElementById("status").textContent = "Controls unavailable.";
+  }
+</script>
+</body>
+</html>

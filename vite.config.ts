@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import tailwindcss from "@tailwindcss/vite";
 export default defineConfig({
   plugins: [tailwindcss()],
-  input: "websocket_client.html",
+  input: ["websocket_client.html", "instructor.html"],
   server: {
     proxy: {
       '/ws': {

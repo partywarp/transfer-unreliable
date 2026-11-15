@@ -92,11 +92,7 @@ endpoint_gateways = {
 first_hops = build_first_hops(router_ips, endpoint_gateways)
 
 # This state belongs to the shared network, not to any student's session.
-failure_candidates = tuple(
-    router for router in router_ips
-    if router not in endpoint_gateways.values()
-)
-failed_routers = {random_source.choice(failure_candidates)}
+failed_routers: set[str] = set()
 
 
 def restart_router(router_ip: str) -> str:

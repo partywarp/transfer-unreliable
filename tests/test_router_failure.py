@@ -13,9 +13,7 @@ from transfer_server.websocket_endpoint import ws_endpoint
 
 class RouterFailureTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.assertEqual(len(network.failed_routers), 1)
-        self.assertTrue(network.failed_routers <= network.router_set)
-        self.assertTrue(network.failed_routers.isdisjoint(network.endpoint_gateways.values()))
+        self.assertEqual(network.failed_routers, set())
         self.failed = "10.0.1.6"
         failure = patch.object(network, "failed_routers", {self.failed})
         failure.start()

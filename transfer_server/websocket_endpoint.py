@@ -5,6 +5,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from .bank_commands import bank_command
 from .clientside_commands import clientside_command
 from .config import COMPUTER_IP
+from .government_commands import government_command
 from .news_site_commands import news_site_command
 from .network import packet_reaches
 from .replies import RoutedReplies, TextSender
@@ -31,6 +32,7 @@ async def send_help(ws: WebSocket) -> None:
         "RESTART <router-ip>",
         "TIME",
         "VERIFY <seconds>",
+        "PAY <amount> <id>",
         "HELP",
     ):
         await ws.send_text(line)
@@ -65,13 +67,16 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 continue
 
             replies: TextSender = ws
-            if command in {"ROB", "START", "DATA", "STATUS", "DONE", "TIME", "VERIFY"}:
+            if command in {"ROB", "START", "DATA", "STATUS", "DONE", "TIME", "VERIFY", "PAY"}:
                 sock = active_socket(session)
                 if sock is not None and sock.remote is not None:
                     if not packet_reaches(session.ip, sock.remote[0]):
                         await ws.send_text("Router replied: Destination unreachable.")
                         continue
                     replies = RoutedReplies(ws, sock.remote[0], session.ip)
+
+            if await government_command(command, args, replies, session):
+                continue
 
             if await news_site_command(
                 command,
