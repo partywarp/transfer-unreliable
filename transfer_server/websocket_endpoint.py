@@ -6,7 +6,8 @@ from .bank_commands import bank_command
 from .clientside_commands import clientside_command
 from .config import COMPUTER_IP
 from .news_site_commands import news_site_command
-from .network import can_exchange_packets
+from .network import packet_reaches
+from .replies import RoutedReplies, TextSender
 from .state import SessionState, active_socket, new_socket
 from .time_server_commands import time_server_command
 
@@ -63,21 +64,20 @@ async def ws_endpoint(ws: WebSocket) -> None:
             ):
                 continue
 
+            replies: TextSender = ws
             if command in {"ROB", "START", "DATA", "STATUS", "DONE", "TIME", "VERIFY"}:
                 sock = active_socket(session)
-                if (
-                    sock is not None
-                    and sock.remote is not None
-                    and not can_exchange_packets(session.ip, sock.remote[0])
-                ):
-                    await ws.send_text("TIMEOUT")
-                    continue
+                if sock is not None and sock.remote is not None:
+                    if not packet_reaches(session.ip, sock.remote[0]):
+                        await ws.send_text("Router replied: Destination unreachable.")
+                        continue
+                    replies = RoutedReplies(ws, sock.remote[0], session.ip)
 
             if await news_site_command(
                 command,
                 args,
                 message,
-                ws,
+                replies,
                 session,
             ):
                 continue
@@ -85,7 +85,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
             if await bank_command(
                 command,
                 args,
-                ws,
+                replies,
                 session,
             ):
                 continue
@@ -93,7 +93,7 @@ async def ws_endpoint(ws: WebSocket) -> None:
             if await time_server_command(
                 command,
                 args,
-                ws,
+                replies,
                 session,
             ):
                 continue

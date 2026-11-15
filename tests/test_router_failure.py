@@ -13,15 +13,23 @@ from transfer_server.websocket_endpoint import ws_endpoint
 
 class RouterFailureTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.failed = network.failed_router
-        self.assertIsNotNone(self.failed)
-        failure = patch.object(network, "failed_router", self.failed)
+        self.assertEqual(len(network.failed_routers), 1)
+        self.assertTrue(network.failed_routers <= network.router_set)
+        self.assertTrue(network.failed_routers.isdisjoint(network.endpoint_gateways.values()))
+        self.failed = "10.0.1.6"
+        failure = patch.object(network, "failed_routers", {self.failed})
         failure.start()
         self.addCleanup(failure.stop)
-        self.host = next(
-            host for host in network.host_ips
-            if network.endpoint_gateways[host] == self.failed
-        )
+        self.host = "10.0.0.7"
+        # Exercise both directions deterministically without changing generation.
+        routes = patch.dict(network.first_hops, {
+            (LOCAL_ROUTER, self.host): self.failed,
+            (self.failed, self.host): self.host,
+            (self.host, COMPUTER_IP): self.failed,
+            (self.failed, COMPUTER_IP): LOCAL_ROUTER,
+        })
+        routes.start()
+        self.addCleanup(routes.stop)
 
     @asynccontextmanager
     async def connection(self):
@@ -85,7 +93,7 @@ class RouterFailureTests(unittest.IsolatedAsyncioTestCase):
                     result = network.trace_packet(source, destination, ttl)
                     if result == "TIMEOUT":
                         continue
-                    with patch.object(network, "failed_router", None):
+                    with patch.object(network, "failed_routers", set()):
                         self.assertEqual(
                             result, network.trace_packet(source, destination, ttl)
                         )
@@ -115,7 +123,7 @@ class RouterFailureTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await receive1(), "Unknown router.")
             await send1(f"RESTART {LOCAL_ROUTER}")
             self.assertEqual(await receive1(), f"RESTARTED {LOCAL_ROUTER}")
-            self.assertEqual(network.failed_router, self.failed)
+            self.assertEqual(network.failed_routers, {self.failed})
 
             await send1("CLOSE")
             self.assertEqual(await receive1(), "Connection closed.")
@@ -134,21 +142,21 @@ class RouterFailureTests(unittest.IsolatedAsyncioTestCase):
     async def test_host_commands_block_before_side_effects_and_resume(self):
         for command in ("ROB 10", "START file 1 hash", "DATA 0 text", "STATUS", "DONE", "TIME", "VERIFY 0"):
             for host, port in (("10.0.0.6", 443), ("10.0.0.7", 80), ("10.0.0.9", 123)):
-                with patch.object(network, "failed_router", network.endpoint_gateways[host]):
+                with patch.object(network, "failed_routers", {network.first_hops[(LOCAL_ROUTER, host)]}):
                     async with self.connection() as (send, receive):
                         await send(f"CONNECT {host} {port}")
                         self.assertTrue((await receive()).startswith("CONNECTED:"))
                         await send(command)
-                        self.assertEqual(await receive(), "TIMEOUT")
+                        self.assertEqual(await receive(), "Router replied: Destination unreachable.")
 
-        with patch.object(network, "failed_router", network.endpoint_gateways["10.0.0.7"]):
+        with patch.object(network, "failed_routers", {self.failed}):
             async with self.connection() as (send, receive):
                 await send("CONNECT 10.0.0.7 80")
                 self.assertEqual(await receive(), "CONNECTED: NY Times")
                 checksum = hashlib.sha256(b"hello").hexdigest()
                 await send(f"START file 1 {checksum}")
-                self.assertEqual(await receive(), "TIMEOUT")
-                await send(f"RESTART {network.failed_router}")
+                self.assertEqual(await receive(), "Router replied: Destination unreachable.")
+                await send(f"RESTART {self.failed}")
                 await receive()
                 await send(f"START file 1 {checksum}")
                 self.assertEqual(await receive(), "READY file 1")
@@ -161,7 +169,7 @@ class RouterFailureTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue((await receive()).startswith("TRANSFER COMPLETE file 5 bytes"))
 
     async def test_offline_hosts_and_wrong_ports_still_reject_connections(self):
-        with patch.object(network, "failed_router", None):
+        with patch.object(network, "failed_routers", set()):
             async with self.connection() as (send, receive):
                 for host, port in (("10.0.0.100", 443), ("10.0.0.7", 81)):
                     await send(f"CONNECT {host} {port}")
@@ -180,7 +188,7 @@ class RouterFailureTests(unittest.IsolatedAsyncioTestCase):
                 await send(command)
                 self.assertEqual(await receive(), f"CONNECTED: {network.online_hosts[address]}")
                 await send("STATUS")
-                self.assertEqual(await receive(), "TIMEOUT")
+                self.assertEqual(await receive(), "Router replied: Destination unreachable.")
             await send1(f"RESTART {self.failed}")
             self.assertEqual(await receive1(), f"RESTARTED {self.failed}")
             for send, receive in ((send1, receive1), (send2, receive2)):
@@ -204,8 +212,65 @@ class RouterFailureTests(unittest.IsolatedAsyncioTestCase):
             async with self.connection() as (send, receive):
                 await send(f"CONNECT {host} 123")
                 self.assertEqual(await receive(), "CONNECTED: SNTP Time Server")
-                await send("TIME")
-                self.assertEqual(await receive(), "TIMEOUT")
+                with patch("transfer_server.time_server_commands.datagram_dropped", return_value=False):
+                    await send("TIME")
+                    self.assertEqual(await receive(), "Timeout")
+
+    async def test_delivered_requests_take_effect_despite_lost_replies(self):
+        healthy_router = "10.0.1.2"
+        with patch.dict(network.first_hops, {
+            (LOCAL_ROUTER, self.host): healthy_router,
+            (healthy_router, self.host): self.host,
+        }):
+            async with self.connection() as (send, receive):
+                await send(f"CONNECT {self.host} 80")
+                self.assertEqual(await receive(), "CONNECTED: NY Times")
+                checksum = hashlib.sha256(b"hello").hexdigest()
+                await send(f"START file 1 {checksum}")
+                self.assertEqual(await receive(), "Timeout")
+
+                # Exercise-specific request loss stays silent, without a reply.
+                with patch("transfer_server.news_site_commands.datagram_dropped", return_value=True):
+                    await send("DATA 0 hello")
+                    await send(f"TRACE {COMPUTER_IP} 1")
+                    self.assertEqual(await receive(), f"REACHED {COMPUTER_IP}")
+
+                with patch("transfer_server.news_site_commands.datagram_dropped", return_value=False):
+                    await send("DATA 0 hello")
+                    self.assertEqual(await receive(), "Timeout")
+                await send(f"RESTART {self.failed}")
+                self.assertEqual(await receive(), f"RESTARTED {self.failed}")
+                await send("STATUS")
+                self.assertEqual(await receive(), "RECEIVED 1/1 MISSING none")
+                await send("DONE")
+                self.assertTrue((await receive()).startswith("TRANSFER COMPLETE file 5 bytes"))
+
+    async def test_multiple_lost_replies_report_one_timeout(self):
+        host = "10.0.0.6"
+        with patch.dict(network.first_hops, {
+            (LOCAL_ROUTER, host): "10.0.1.2",
+            ("10.0.1.2", host): host,
+            (host, COMPUTER_IP): self.failed,
+        }):
+            async with self.connection() as (send, receive):
+                await send(f"CONNECT {host} 443")
+                self.assertEqual(await receive(), "CONNECTED: The Bank")
+                await send("ROB 10")
+                self.assertEqual(await receive(), "Timeout")
+                await send(f"RESTART {self.failed}")
+                self.assertEqual(await receive(), f"RESTARTED {self.failed}")
+                await send("ROB 20")
+                self.assertEqual(await receive(), f"Stole $20.00 from {host}:443")
+                self.assertEqual(await receive(), "The police caught you!")
+                self.assertEqual(await receive(), "You were removed.")
+                await send("CLOSE")
+                self.assertEqual(await receive(), "Connection closed.")
+
+    def test_restart_repairs_only_the_selected_router(self):
+        network.failed_routers.add("10.0.1.5")
+        network.restart_router(self.failed)
+        self.assertEqual(network.failed_routers, {"10.0.1.5"})
+        self.assertEqual(network.trace_packet(COMPUTER_IP, "10.0.1.5", 10), "TIMEOUT")
 
     async def test_help_lists_recovery_without_disclosing_failure(self):
         async with self.connection() as (send, receive):

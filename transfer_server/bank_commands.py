@@ -1,12 +1,10 @@
 # pyright: strict
 
-from fastapi import WebSocket
-
 from .config import online_hosts
+from .replies import TextSender
 from .state import (
     SessionState,
     active_socket,
-    disconnect_socket,
     remote_key,
 )
 
@@ -14,7 +12,7 @@ from .state import (
 async def bank_command(
     command: str,
     args: list[str],
-    ws: WebSocket,
+    ws: TextSender,
     session: SessionState,
 ) -> bool:
     if command != "ROB":
@@ -45,5 +43,4 @@ async def bank_command(
     await ws.send_text(f"Stole ${amount:.2f} from {destination}")
     await ws.send_text("The police caught you!")
     await ws.send_text("You were removed.")
-    disconnect_socket(sock)
     return True

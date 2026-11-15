@@ -4,9 +4,8 @@ import asyncio
 import random
 import time
 
-from fastapi import WebSocket
-
 from .config import datagram_delay, datagram_dropped, online_hosts
+from .replies import TextSender
 from .state import SessionState, active_socket, remote_key
 
 
@@ -20,7 +19,7 @@ def server_time() -> float:
 async def time_server_command(
     command: str,
     args: list[str],
-    ws: WebSocket,
+    ws: TextSender,
     session: SessionState,
 ) -> bool:
     if command == "TIME":

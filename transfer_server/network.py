@@ -91,25 +91,19 @@ endpoint_gateways = {
 }
 first_hops = build_first_hops(router_ips, endpoint_gateways)
 
-# A host gateway always carries traffic, so its failure cannot be incidental.
 # This state belongs to the shared network, not to any student's session.
-failed_router: str | None = random_source.choice(
-    tuple(
-        router
-        for router in router_ips
-        if router != LOCAL_ROUTER and router in endpoint_gateways.values()
-    )
+failure_candidates = tuple(
+    router for router in router_ips
+    if router not in endpoint_gateways.values()
 )
+failed_routers = {random_source.choice(failure_candidates)}
 
 
 def restart_router(router_ip: str) -> str:
-    global failed_router
-
     if router_ip not in router_set:
         return "Unknown router."
 
-    if router_ip == failed_router:
-        failed_router = None
+    failed_routers.discard(router_ip)
 
     return f"RESTARTED {router_ip}"
 
@@ -124,7 +118,7 @@ def trace_packet(source_ip: str, destination_ip: str, ttl: int) -> str:
     if destination_ip not in device_ips:
         return f"DESTINATION UNREACHABLE {destination_ip}"
 
-    if source_ip == failed_router:
+    if source_ip in failed_routers:
         return "TIMEOUT"
 
     current = source_ip
@@ -133,7 +127,7 @@ def trace_packet(source_ip: str, destination_ip: str, ttl: int) -> str:
     while current != destination_ip:
         current = first_hops[(current, destination_ip)]
 
-        if current == failed_router:
+        if current in failed_routers:
             return "TIMEOUT"
 
         if current == destination_ip:
@@ -148,10 +142,14 @@ def trace_packet(source_ip: str, destination_ip: str, ttl: int) -> str:
     return f"REACHED {destination_ip}"
 
 
+def packet_reaches(source_ip: str, destination_ip: str) -> bool:
+    ttl = len(router_ips) + 1
+    return trace_packet(source_ip, destination_ip, ttl) == f"REACHED {destination_ip}"
+
+
 def can_exchange_packets(source_ip: str, destination_ip: str) -> bool:
     # Requests and replies can follow different routes.
-    ttl = len(router_ips) + 1
     return (
-        trace_packet(source_ip, destination_ip, ttl) == f"REACHED {destination_ip}"
-        and trace_packet(destination_ip, source_ip, ttl) == f"REACHED {source_ip}"
+        packet_reaches(source_ip, destination_ip)
+        and packet_reaches(destination_ip, source_ip)
     )

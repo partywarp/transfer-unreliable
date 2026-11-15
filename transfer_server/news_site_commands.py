@@ -2,8 +2,6 @@
 
 import hashlib
 
-from fastapi import WebSocket
-
 from .config import (
     ACK_BYTES,
     DATA_HEADER_BYTES,
@@ -16,6 +14,7 @@ from .state import (
     active_socket,
     remote_key,
 )
+from .replies import TextSender
 
 
 def _missing_chunks(transfer: TransferState) -> list[int]:
@@ -35,7 +34,7 @@ async def news_site_command(
     command: str,
     args: list[str],
     message: str,
-    ws: WebSocket,
+    ws: TextSender,
     session: SessionState,
 ) -> bool:
     if command == "START":
